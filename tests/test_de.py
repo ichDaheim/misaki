@@ -207,6 +207,11 @@ class TestCurrency:
         assert "Euro" in r
         assert "Cent" in r
 
+    def test_euro_fraction_rounds_to_next_unit(self):
+        r = normalize_text_de("€9,999 bitte")
+        assert "zehn Euro" in r
+        assert "Cent" not in r
+
     def test_dollar(self):
         r = normalize_text_de("$100 Rabatt")
         assert "Dollar" in r
@@ -233,6 +238,17 @@ class TestTimes:
     def test_no_double_uhr(self):
         r = normalize_text_de("Um 14:30 Uhr")
         assert r.count("Uhr") == 1
+
+    def test_uhr_word_boundary(self):
+        r = normalize_text_de("Um 14:30 Uhrzeit beginnt es.")
+        assert "vierzehn Uhr dreißigzeit" not in r
+        assert "Uhrzeit" in r
+
+    def test_invalid_hour_is_unchanged(self):
+        assert "25:00 Uhr" in normalize_text_de("Um 25:00 Uhr.")
+
+    def test_invalid_minute_is_unchanged(self):
+        assert "23:99 Uhr" in normalize_text_de("Um 23:99 Uhr.")
 
 
 class TestDates:

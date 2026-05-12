@@ -8,6 +8,7 @@ DEG2P wraps normalize_text_de() + EspeakG2P for use in KPipeline.
 
 from typing import Tuple
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 # ── cardinal numbers ─────────────────────────────────────────────────────────
 
@@ -140,11 +141,11 @@ def _currency_repl(sym, num):
     word = _CURRENCY.get(sym, sym)
     cleaned = num.replace(".", "").replace(",", ".")
     try:
-        val = float(cleaned)
-    except ValueError:
+        val = Decimal(cleaned)
+    except InvalidOperation:
         return sym + num
-    euros = int(val)
-    cents = round((val - euros) * 100)
+    cents_total = int((val * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    euros, cents = divmod(cents_total, 100)
     if cents == 0:
         return _int_to_de(euros) + " " + word
     return _int_to_de(euros) + " " + word + " und " + _int_to_de(cents) + " Cent"
@@ -223,11 +224,24 @@ def normalize_text_de(text):
     )
 
     # 5. Times (HH:MM)
+    invalid_times = []
+
+    def _invalid_time_repl(m):
+        h, mi = int(m.group(1)), int(m.group(2))
+        if h <= 23 and mi <= 59:
+            return m.group(0)
+        invalid_times.append(m.group(0))
+        return f"__MISAKI_DE_INVALID_TIME_{len(invalid_times) - 1}__"
+
+    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr\b)?", _invalid_time_repl, text)
+
     def _time_repl(m):
         h, mi = int(m.group(1)), int(m.group(2))
+        if h > 23 or mi > 59:
+            return m.group(0)
         return _int_to_de(h) + " Uhr" + (" " + _int_to_de(mi) if mi else "")
 
-    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr)?", _time_repl, text)
+    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr\b)?", _time_repl, text)
 
     # 6. Full dates (DD.MM.YYYY)
     def _date_repl(m):
@@ -279,6 +293,9 @@ def normalize_text_de(text):
 
     # Plain integers
     text = re.sub(r"\b(\d+)\b", lambda m: _int_to_de(int(m.group(1))), text)
+
+    for idx, value in enumerate(invalid_times):
+        text = text.replace(f"__MISAKI_DE_INVALID_TIME_{idx}__", value)
 
     # 10. Whitespace cleanup
     text = re.sub(r"[ \t]{2,}", " ", text)
