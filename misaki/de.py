@@ -224,17 +224,6 @@ def normalize_text_de(text):
     )
 
     # 5. Times (HH:MM)
-    invalid_times = []
-
-    def _invalid_time_repl(m):
-        h, mi = int(m.group(1)), int(m.group(2))
-        if h <= 23 and mi <= 59:
-            return m.group(0)
-        invalid_times.append(m.group(0))
-        return f"__MISAKI_DE_INVALID_TIME_{len(invalid_times) - 1}__"
-
-    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr\b)?", _invalid_time_repl, text)
-
     def _time_repl(m):
         h, mi = int(m.group(1)), int(m.group(2))
         if h > 23 or mi > 59:
@@ -291,11 +280,18 @@ def normalize_text_de(text):
 
     text = re.sub(r"\b(\d+),(\d+)\b", _decimal_repl, text)
 
-    # Plain integers
-    text = re.sub(r"\b(\d+)\b", lambda m: _int_to_de(int(m.group(1))), text)
+    # Plain integers. Keep any invalid HH:MM text that survived the time pass unchanged.
+    remaining_time_re = re.compile(r"\b\d{1,2}:\d{2}(?:\s*Uhr\b)?")
 
-    for idx, value in enumerate(invalid_times):
-        text = text.replace(f"__MISAKI_DE_INVALID_TIME_{idx}__", value)
+    def _plain_int_repl(m):
+        start = max(0, m.start() - 3)
+        end = min(len(text), m.end() + len(":00 Uhr"))
+        for time_match in remaining_time_re.finditer(text, start, end):
+            if time_match.start() <= m.start() and m.end() <= time_match.end():
+                return m.group(0)
+        return _int_to_de(int(m.group(1)))
+
+    text = re.sub(r"\b(\d+)\b", _plain_int_repl, text)
 
     # 10. Whitespace cleanup
     text = re.sub(r"[ \t]{2,}", " ", text)
