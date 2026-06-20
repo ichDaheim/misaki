@@ -8,6 +8,7 @@ DEG2P wraps normalize_text_de() + EspeakG2P for use in KPipeline.
 
 from typing import Tuple
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 # ── cardinal numbers ─────────────────────────────────────────────────────────
 
@@ -140,11 +141,11 @@ def _currency_repl(sym, num):
     word = _CURRENCY.get(sym, sym)
     cleaned = num.replace(".", "").replace(",", ".")
     try:
-        val = float(cleaned)
-    except ValueError:
+        val = Decimal(cleaned)
+    except InvalidOperation:
         return sym + num
-    euros = int(val)
-    cents = round((val - euros) * 100)
+    cents_total = int((val * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    euros, cents = divmod(cents_total, 100)
     if cents == 0:
         return _int_to_de(euros) + " " + word
     return _int_to_de(euros) + " " + word + " und " + _int_to_de(cents) + " Cent"
@@ -225,9 +226,11 @@ def normalize_text_de(text):
     # 5. Times (HH:MM)
     def _time_repl(m):
         h, mi = int(m.group(1)), int(m.group(2))
+        if h > 23 or mi > 59:
+            return m.group(0)
         return _int_to_de(h) + " Uhr" + (" " + _int_to_de(mi) if mi else "")
 
-    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr)?", _time_repl, text)
+    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr\b)?", _time_repl, text)
 
     # 6. Full dates (DD.MM.YYYY)
     def _date_repl(m):
@@ -277,8 +280,18 @@ def normalize_text_de(text):
 
     text = re.sub(r"\b(\d+),(\d+)\b", _decimal_repl, text)
 
-    # Plain integers
-    text = re.sub(r"\b(\d+)\b", lambda m: _int_to_de(int(m.group(1))), text)
+    # Plain integers. Keep any invalid HH:MM text that survived the time pass unchanged.
+    remaining_time_re = re.compile(r"\b\d{1,2}:\d{2}(?:\s*Uhr\b)?")
+
+    def _plain_int_repl(m):
+        start = max(0, m.start() - 3)
+        end = min(len(text), m.end() + len(":00 Uhr"))
+        for time_match in remaining_time_re.finditer(text, start, end):
+            if time_match.start() <= m.start() and m.end() <= time_match.end():
+                return m.group(0)
+        return _int_to_de(int(m.group(1)))
+
+    text = re.sub(r"\b(\d+)\b", _plain_int_repl, text)
 
     # 10. Whitespace cleanup
     text = re.sub(r"[ \t]{2,}", " ", text)

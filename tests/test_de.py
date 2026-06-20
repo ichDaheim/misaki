@@ -190,6 +190,9 @@ class TestNumbers:
         assert "Komma" in r
         assert "36,9" not in r
 
+    def test_colon_separated_non_time_numbers(self):
+        assert "eins:zwei" in normalize_text_de("Stand 1:2.")
+
 
 class TestCurrency:
     def test_euro_before(self):
@@ -206,6 +209,11 @@ class TestCurrency:
         r = normalize_text_de("€9,99 bitte")
         assert "Euro" in r
         assert "Cent" in r
+
+    def test_euro_fraction_rounds_to_next_unit(self):
+        r = normalize_text_de("€9,999 bitte")
+        assert "zehn Euro" in r
+        assert "Cent" not in r
 
     def test_dollar(self):
         r = normalize_text_de("$100 Rabatt")
@@ -233,6 +241,22 @@ class TestTimes:
     def test_no_double_uhr(self):
         r = normalize_text_de("Um 14:30 Uhr")
         assert r.count("Uhr") == 1
+
+    def test_uhr_word_boundary(self):
+        r = normalize_text_de("Um 14:30 Uhrzeit beginnt es.")
+        assert "vierzehn Uhr dreißigzeit" not in r
+        assert "Uhrzeit" in r
+
+    def test_invalid_hour_is_unchanged(self):
+        assert "25:00 Uhr" in normalize_text_de("Um 25:00 Uhr.")
+
+    def test_invalid_minute_is_unchanged(self):
+        assert "23:99 Uhr" in normalize_text_de("Um 23:99 Uhr.")
+
+    def test_invalid_time_does_not_replace_literal_placeholder_text(self):
+        r = normalize_text_de("Token __MISAKI_DE_INVALID_TIME_0__ um 25:00 Uhr.")
+        assert "__MISAKI_DE_INVALID_TIME_0__" in r
+        assert "25:00 Uhr" in r
 
 
 class TestDates:
