@@ -6,9 +6,14 @@ abbreviations so espeak-ng receives clean spelled-out text.
 DEG2P wraps normalize_text_de() + EspeakG2P for use in KPipeline.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
+import importlib.resources
+import json
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+
+from . import data
 
 # ── cardinal numbers ─────────────────────────────────────────────────────────
 
@@ -301,6 +306,88 @@ def normalize_text_de(text):
     return text
 
 
+# ── pronunciation overrides ──────────────────────────────────────────────────
+#
+# A small lexicon layer on top of espeak-de. espeak mispronounces English /
+# brand / tech terms (GitHub, PyTorch, CUDA, ...) and a few foreign-origin
+# German words. These overrides supply hand-written phonemes that bypass espeak
+# and go straight to the model. Phonemes use the same symbol convention espeak's
+# output is mapped to (see misaki.espeak.EspeakG2P.e2m), e.g. capital A/I/W/O/Y
+# for diphthongs.
+#
+# Lookup keys are matched after normalize_for_lookup(): casefold, NFKD, strip
+# combining marks, and fold "+"->"plus", "&"->"and", "@"->"at". This lets
+# "Disney+" match "disneyplus" without any multi-word logic.
+
+
+_LOOKUP_REPLACEMENTS = {"+": "plus", "&": "and", "@": "at"}
+
+# Punctuation that attaches tightly to the preceding phoneme fragment.
+_TRAILING_PUNCT = frozenset(".,!?;:%)]}»”")
+
+# Word-ish tokens for override matching. Captures internal "-"/"'" (espeak-ng,
+# zero-shot) and a trailing "+" (Disney+) so single tokens with joiners match
+# their normalized override key. Space-separated multi-word brands are not
+# matched here by design.
+_OVERRIDE_WORD_RE = re.compile(
+    r"[0-9A-Za-zÀ-ÖØ-öø-ÿß]+(?:['\-][0-9A-Za-zÀ-ÖØ-öø-ÿß]+)*\+?"
+)
+
+
+def normalize_for_lookup(text: str) -> str:
+    """Collapse a word to its override-lookup key.
+
+    Casefolds, applies NFKD and drops combining marks (so "Moët" -> "moet"),
+    folds a few joiner symbols to words ("+" -> "plus"), and keeps only
+    alphanumerics. Spaces and other punctuation are dropped, so "Prime Video"
+    collapses to "primevideo".
+    """
+    text = unicodedata.normalize("NFKD", text.casefold())
+    parts = []
+    for char in text:
+        if unicodedata.category(char) == "Mn":
+            continue
+        replacement = _LOOKUP_REPLACEMENTS.get(char)
+        if replacement is not None:
+            parts.append(replacement)
+            continue
+        if char.isalnum():
+            parts.append(char)
+    return "".join(parts)
+
+
+def _load_overrides():
+    """Load de_overrides.json and build the normalized lookup table.
+
+    Priority on key collisions: brand > en > de_foreign (first writer wins).
+    Returns (lookup, aliases) where lookup maps normalized keys to phonemes and
+    aliases maps one normalized key to another.
+    """
+    with importlib.resources.open_text(data, "de_overrides.json") as r:
+        raw = json.load(r)
+    lookup = {}
+    for section in ("brand", "en", "de_foreign"):
+        for key, value in raw.get(section, {}).items():
+            lookup.setdefault(normalize_for_lookup(key), value)
+    aliases = {
+        normalize_for_lookup(k): normalize_for_lookup(v)
+        for k, v in raw.get("aliases", {}).items()
+    }
+    return lookup, aliases
+
+
+_OVERRIDES, _OVERRIDE_ALIASES = _load_overrides()
+
+
+def override_for(word: str) -> Optional[str]:
+    """Return override phonemes for a single word, or None if not overridden."""
+    key = normalize_for_lookup(word)
+    if not key:
+        return None
+    key = _OVERRIDE_ALIASES.get(key, key)
+    return _OVERRIDES.get(key)
+
+
 # ── G2P class ────────────────────────────────────────────────────────────────
 
 
@@ -312,6 +399,52 @@ class DEG2P:
 
         self.espeak = EspeakG2P(language="de")
 
+    def _espeak_phonemes(self, text) -> str:
+        if not text or not text.strip():
+            return ""
+        ps, _ = self.espeak(text)
+        return ps or ""
+
+    @staticmethod
+    def _render(parts) -> str:
+        # Join phoneme fragments with single spaces, but attach leading
+        # punctuation (e.g. a fragment that is just "!") tightly to the
+        # previous fragment, matching plain-espeak spacing.
+        rendered = ""
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if not rendered:
+                rendered = part
+            elif part[0] in _TRAILING_PUNCT:
+                rendered += part
+            else:
+                rendered += " " + part
+        return rendered
+
     def __call__(self, text) -> Tuple[str, None]:
         text = normalize_text_de(text)
-        return self.espeak(text)
+
+        # Find override words; everything between them is phonemized by espeak.
+        # When no overrides match, this is identical to espeak(text).
+        parts = []
+        cursor = 0
+        for match in _OVERRIDE_WORD_RE.finditer(text):
+            phonemes = override_for(match.group(0))
+            if phonemes is None:
+                continue
+            preceding = text[cursor:match.start()]
+            if preceding.strip():
+                parts.append(self._espeak_phonemes(preceding))
+            parts.append(phonemes)
+            cursor = match.end()
+
+        if cursor == 0:
+            return self.espeak(text)
+
+        trailing = text[cursor:]
+        if trailing.strip():
+            parts.append(self._espeak_phonemes(trailing))
+
+        return self._render(parts), None
