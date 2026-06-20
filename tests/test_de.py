@@ -334,6 +334,69 @@ class TestComplexSentence:
         assert "14:30" not in r
 
 
+# ── pronunciation overrides (no espeak-ng required) ──────────────────────────
+
+from misaki.de import normalize_for_lookup, override_for
+
+
+class TestNormalizeForLookup:
+    def test_collapses_spaces(self):
+        assert normalize_for_lookup("Louis Vuitton") == "louisvuitton"
+
+    def test_casefolds(self):
+        assert normalize_for_lookup("GitHub") == "github"
+
+    def test_plus_sign_becomes_plus(self):
+        assert normalize_for_lookup("Disney+") == "disneyplus"
+
+    def test_ampersand_becomes_and(self):
+        assert normalize_for_lookup("Moët & Chandon") == "moetandchandon"
+
+    def test_at_becomes_at(self):
+        assert normalize_for_lookup("user@host") == "userathost"
+
+    def test_strips_accents(self):
+        assert normalize_for_lookup("Moët") == "moet"
+
+    def test_drops_punctuation(self):
+        assert normalize_for_lookup("zero-shot") == "zeroshot"
+
+
+class TestOverrideFor:
+    def test_brand(self):
+        assert override_for("CUDA") == "kˈuːda"
+
+    def test_brand_case_insensitive(self):
+        assert override_for("cuda") == override_for("CUDA")
+
+    def test_en(self):
+        assert override_for("GitHub") == "ɡˈɪthab"
+
+    def test_de_foreign(self):
+        assert override_for("Synthese") == "zyntˈeːzə"
+
+    def test_joiner_token_matches_collapsed_key(self):
+        # "Disney+" must resolve to the same entry as "disneyplus".
+        assert override_for("Disney+") == override_for("disneyplus")
+        assert override_for("Disney+") is not None
+
+    def test_hyphen_token_matches(self):
+        assert override_for("espeak-ng") is not None
+        assert override_for("zero-shot") is not None
+
+    def test_alias(self):
+        # "Moët & Chandon" -> moetandchandon -> alias -> moetchandon
+        assert override_for("Moët & Chandon") == override_for("moetchandon")
+
+    def test_unknown_returns_none(self):
+        assert override_for("Spaziergang") is None
+
+    def test_priority_brand_over_en(self):
+        # No key currently collides across sections, but the loader must keep
+        # brand > en > de_foreign. Spot-check that a brand key resolves.
+        assert override_for("kokoro") == "kˈoːkoːʁoː"
+
+
 # ── integration tests (require espeak-ng) ────────────────────────────────────
 
 try:
@@ -374,3 +437,31 @@ class TestDEG2PIntegration:
         ps, _ = self.g2p("Das kostet €9,99.")
         assert isinstance(ps, str)
         assert len(ps) > 0
+
+    def test_no_override_path_matches_plain_espeak(self):
+        # Text without any override word must be identical to running espeak on
+        # the normalized text (no regression from the routing layer).
+        text = "Guten Morgen, wie geht es Ihnen?"
+        via_g2p, tok = self.g2p(text)
+        direct, _ = self.g2p.espeak(normalize_text_de(text))
+        assert via_g2p == direct
+        assert tok is None
+
+    def test_override_word_phonemes_are_injected(self):
+        ps, _ = self.g2p("Ich nutze GitHub.")
+        assert override_for("GitHub") in ps
+
+    def test_override_in_sentence_keeps_context(self):
+        ps, _ = self.g2p("Wir testen CUDA und PyTorch heute.")
+        assert override_for("CUDA") in ps
+        assert override_for("PyTorch") in ps
+
+    def test_joiner_override_in_sentence(self):
+        ps, _ = self.g2p("Läuft auf Disney+ heute.")
+        assert override_for("Disney+") in ps
+
+    def test_trailing_punctuation_stays_tight(self):
+        # No space should be introduced before sentence-final punctuation.
+        ps, _ = self.g2p("Hallo, GitHub!")
+        assert ps.endswith("!")
+        assert " !" not in ps

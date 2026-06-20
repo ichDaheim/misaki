@@ -30,7 +30,17 @@ ko = ["jamo", "nltk"]
 zh = ["jieba", "ordered-set", "pypinyin", "cn2an", "pypinyin-dict"]
 vi = ["num2words", "spacy", "spacy-curated-transformers", "underthesea"]
 de = ["phonemizer-fork", "espeakng-loader"]
-he = ["mishkal-hebrew>=0.3.2"]
+he = ["mishkal-hebrew>=0.3.2; python_version < '3.12'"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+# mishkal-hebrew (the sole [he] dependency) only ships wheels for Python < 3.12.
+# This fork targets 3.12 (see .python-version), so constrain universal resolution
+# to >= 3.12. Affects only this repo's dev lockfile, not the published package's
+# requires-python or optional-dependencies, which consumers still resolve normally.
+environments = ["python_version >= '3.12'"]
 
 [build-system]
 requires = ["hatchling"]
