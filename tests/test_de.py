@@ -258,6 +258,18 @@ class TestTimes:
         assert "__MISAKI_DE_INVALID_TIME_0__" in r
         assert "25:00 Uhr" in r
 
+    def test_malformed_minutes_length_is_not_time(self):
+        r = normalize_text_de("Um 14:300 Uhr.")
+        assert "vierzehn Uhr dreißig" not in r
+        assert "vierzehn" in r
+        assert "dreihundert" in r
+
+    def test_invalid_minutes_length_survives_unchanged(self):
+        r = normalize_text_de("Um 25:000 Uhr.")
+        assert "25:000" not in r
+        assert "fünfundzwanzig" in r
+        assert "null" in r
+
 
 class TestDates:
     def test_christmas(self):

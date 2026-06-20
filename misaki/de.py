@@ -230,7 +230,7 @@ def normalize_text_de(text):
             return m.group(0)
         return _int_to_de(h) + " Uhr" + (" " + _int_to_de(mi) if mi else "")
 
-    text = re.sub(r"\b(\d{1,2}):(\d{2})(?:\s*Uhr\b)?", _time_repl, text)
+    text = re.sub(r"\b(\d{1,2}):(\d{2})\b(?:\s*Uhr\b)?", _time_repl, text)
 
     # 6. Full dates (DD.MM.YYYY)
     def _date_repl(m):
@@ -281,7 +281,7 @@ def normalize_text_de(text):
     text = re.sub(r"\b(\d+),(\d+)\b", _decimal_repl, text)
 
     # Plain integers. Keep any invalid HH:MM text that survived the time pass unchanged.
-    remaining_time_re = re.compile(r"\b\d{1,2}:\d{2}(?:\s*Uhr\b)?")
+    remaining_time_re = re.compile(r"\b\d{1,2}:\d{2}\b(?:\s*Uhr\b)?")
 
     def _plain_int_repl(m):
         start = max(0, m.start() - 3)
