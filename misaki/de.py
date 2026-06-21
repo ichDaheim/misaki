@@ -110,6 +110,10 @@ def _ordinal_stem_de(n):
     return stem
 
 
+def _ordinal_with_suffix_de(n, suffix):
+    return _ordinal_stem_de(n) + suffix
+
+
 # ── years ────────────────────────────────────────────────────────────────────
 
 
@@ -160,6 +164,12 @@ def _currency_repl(sym, num):
     if cents == 0:
         return _int_to_de(euros, standalone=False) + " " + word
     return _int_to_de(euros, standalone=False) + " " + word + " und " + _int_to_de(cents, standalone=False) + " Cent"
+
+
+def _render_full_date(day, month, year, suffix):
+    if day < 1 or day > 31 or month < 1 or month > 12:
+        return None
+    return _ordinal_with_suffix_de(day, suffix) + " " + _MONTHS[month] + " " + _year_de(year)
 
 
 # ── text normalization ───────────────────────────────────────────────────────
@@ -243,13 +253,24 @@ def normalize_text_de(text):
 
     text = re.sub(r"\b(\d{1,2}):(\d{2})\b(?:\s*Uhr\b)?", _time_repl, text)
 
-    # 6. Full dates (DD.MM.YYYY)
-    def _date_repl(m):
-        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if d < 1 or d > 31 or mo < 1 or mo > 12:
+    # 6. Full dates (DD.MM.YYYY) with simple case-aware ordinal inflection.
+    def _date_with_prefix_repl(m):
+        prefix = m.group(1)
+        day, month, year = int(m.group(2)), int(m.group(3)), int(m.group(4))
+        suffix = 'en' if prefix.casefold() in {'am', 'im', 'vom', 'zum', 'den'} else 'e'
+        rendered = _render_full_date(day, month, year, suffix)
+        if rendered is None:
             return m.group(0)
-        return _ordinal_stem_de(d) + "e " + _MONTHS[mo] + " " + _year_de(y)
+        return prefix + ' ' + rendered
 
+    def _date_repl(m):
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        rendered = _render_full_date(day, month, year, 'er')
+        if rendered is None:
+            return m.group(0)
+        return rendered
+
+    text = re.sub(r"\b(vom|am|im|zum|den|der)\s+(\d{1,2})\.(\d{1,2})\.(\d{4})\b", _date_with_prefix_repl, text)
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", _date_repl, text)
 
     # 7. Ordinals in common article contexts and general mid-sentence ordinals.
