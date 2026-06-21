@@ -199,6 +199,8 @@ def normalize_text_de(text):
     text = re.sub(r"\bNr\.(?=\s*\d)", "Nummer", text)
     text = re.sub(r"\bTel\.(?=\s)", "Telefon", text)
     text = re.sub(r"\bAbt\.(?=\s)", "Abteilung", text)
+    text = re.sub(r"\bgem\.(?=\s)", "gemäß", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bAbs\.(?=\s*\d)", "Absatz", text)
     text = re.sub(r"\bGmbH\b", "Gesellschaft mit beschränkter Haftung", text)
     text = re.sub(r"\bAG\b(?=[\s,.]|$)", "Aktiengesellschaft", text)
     text = re.sub(r"\bz\.\s*B\.", "zum Beispiel", text, flags=re.IGNORECASE)
@@ -230,6 +232,7 @@ def normalize_text_de(text):
         ("Dez", "Dezember"),
     ]:
         text = re.sub(rf"\b{abbr}\.(?=\s)", full, text)
+    text = re.sub(r"§\s*(?=\d)", "Paragraf ", text)
 
     # 4. Currency (symbol before or after amount)
     csym = r"[€$£¥]"
