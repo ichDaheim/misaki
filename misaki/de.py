@@ -51,6 +51,12 @@ _TENS = [
     "achtzig",
     "neunzig",
 ]
+_LARGE_SCALES = [
+    (1_000_000_000_000_000, "eine Trillionen", "Trillionen"),
+    (1_000_000_000_000, "eine Billionen", "Billionen"),
+    (1_000_000_000, "eine Milliarde", "Milliarden"),
+    (1_000_000, "eine Millionen", "Millionen"),
+]
 
 
 def _int_to_de(n, standalone=True):
@@ -79,23 +85,14 @@ def _int_to_de(n, standalone=True):
         t, r = n // 1_000, n % 1_000
         prefix = _int_to_de(t, standalone=False) if t != 1 else "ein"
         return prefix + "tausend" + (_int_to_de(r, standalone=False) if r else "")
-    if n < 1_000_000_000:
-        m, r = n // 1_000_000, n % 1_000_000
-        word = (
-            "eine Million" if m == 1 else _int_to_de(m, standalone=False) + " Millionen"
-        )
-        return word + (" " + _int_to_de(r, standalone=False) if r else "")
-    if n < 1_000_000_000_000:
-        b, r = n // 1_000_000_000, n % 1_000_000_000
-        word = (
-            "eine Milliarde" if b == 1 else _int_to_de(b, standalone=False) + " Milliarden"
-        )
-        return word + (" " + _int_to_de(r, standalone=False) if r else "")
-    t, r = n // 1_000_000_000_000, n % 1_000_000_000_000
-    word = (
-        "eine Billion" if t == 1 else _int_to_de(t, standalone=False) + " Billionen"
-    )
-    return word + (" " + _int_to_de(r, standalone=False) if r else "")
+
+    for divisor, singular, plural in _LARGE_SCALES:
+        if n >= divisor:
+            scale_count, r = divmod(n, divisor)
+            word = singular if scale_count == 1 else _int_to_de(scale_count, standalone=False) + " " + plural
+            return word + (" " + _int_to_de(r, standalone=False) if r else "")
+
+    return _int_to_de(n)
 
 
 # ── ordinals ─────────────────────────────────────────────────────────────────
