@@ -255,9 +255,14 @@ def normalize_text_de(text):
 
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", _date_repl, text)
 
-    # 7. Ordinals mid-sentence (e.g. "am 3. Mai") -- only 1-2 digit numbers
+    # 7. Ordinals in common article contexts and general mid-sentence ordinals.
     text = re.sub(
-        r"(?<!\d)(\d{1,2})\.\s",
+        r"\b([Aa]m)\s+(\d+)\.\s",
+        lambda m: m.group(1) + " " + _ordinal_stem_de(int(m.group(2))) + "en ",
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(\d+)\.\s",
         lambda m: _ordinal_stem_de(int(m.group(1))) + "e ",
         text,
     )
