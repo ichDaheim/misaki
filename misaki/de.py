@@ -85,9 +85,15 @@ def _int_to_de(n, standalone=True):
             "eine Million" if m == 1 else _int_to_de(m, standalone=False) + " Millionen"
         )
         return word + (" " + _int_to_de(r, standalone=False) if r else "")
-    b, r = n // 1_000_000_000, n % 1_000_000_000
+    if n < 1_000_000_000_000:
+        b, r = n // 1_000_000_000, n % 1_000_000_000
+        word = (
+            "eine Milliarde" if b == 1 else _int_to_de(b, standalone=False) + " Milliarden"
+        )
+        return word + (" " + _int_to_de(r, standalone=False) if r else "")
+    t, r = n // 1_000_000_000_000, n % 1_000_000_000_000
     word = (
-        "eine Milliarde" if b == 1 else _int_to_de(b, standalone=False) + " Milliarden"
+        "eine Billion" if t == 1 else _int_to_de(t, standalone=False) + " Billionen"
     )
     return word + (" " + _int_to_de(r, standalone=False) if r else "")
 
@@ -101,7 +107,10 @@ def _ordinal_stem_de(n):
     """Ordinal stem without inflection suffix."""
     if n in _ORD_IRREG:
         return _ORD_IRREG[n]
-    return _int_to_de(n, standalone=False) + ("t" if n < 20 else "st")
+    stem = _int_to_de(n, standalone=False) + ("t" if n < 20 else "st")
+    if n == 100 or n == 1000:
+        stem = stem.replace("ein", "", 1)
+    return stem
 
 
 # ── years ────────────────────────────────────────────────────────────────────
@@ -152,8 +161,8 @@ def _currency_repl(sym, num):
     cents_total = int((val * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     euros, cents = divmod(cents_total, 100)
     if cents == 0:
-        return _int_to_de(euros) + " " + word
-    return _int_to_de(euros) + " " + word + " und " + _int_to_de(cents) + " Cent"
+        return _int_to_de(euros, standalone=False) + " " + word
+    return _int_to_de(euros, standalone=False) + " " + word + " und " + _int_to_de(cents, standalone=False) + " Cent"
 
 
 # ── text normalization ───────────────────────────────────────────────────────

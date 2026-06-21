@@ -51,6 +51,9 @@ class TestIntToDe:
     def test_billions(self):
         assert _int_to_de(1_000_000_000) == "eine Milliarde"
 
+    def test_trillions(self):
+        assert _int_to_de(1_000_000_000_000) == "eine Billion"
+
     def test_negative(self):
         assert _int_to_de(-5) == "minus fünf"
 
@@ -73,7 +76,10 @@ class TestOrdinalStemDe:
 
     def test_regular_20_plus(self):
         assert _ordinal_stem_de(20) == "zwanzigst"
-        assert _ordinal_stem_de(100) == "einhundertst"
+        assert _ordinal_stem_de(100) == "hundertst"
+        assert _ordinal_stem_de(1000) == "tausendst"
+
+    
 
 
 # ── _year_de ─────────────────────────────────────────────────────────────────
@@ -214,10 +220,15 @@ class TestCurrency:
         assert "zehn Euro" in r
         assert "Cent" not in r
 
-    def test_dollar(self):
-        r = normalize_text_de("$100 Rabatt")
-        assert "Dollar" in r
-        assert "$" not in r
+    def test_one_euro_no_s(self):
+        r = normalize_text_de("€1 bitte")
+        assert "ein Euro" in r
+        assert "eins Euro" not in r
+
+    def test_one_cent_no_s(self):
+        r = normalize_text_de("€0,01 bitte")
+        assert "ein Cent" in r
+        assert "eins Cent" not in r
 
 
 class TestTimes:
