@@ -51,6 +51,13 @@ _TENS = [
     "achtzig",
     "neunzig",
 ]
+_LARGE_SCALES = [
+    (1_000_000_000_000_000, "eine Trillionen", "Trillionen"),
+    (1_000_000_000_000, "eine Billionen", "Billionen"),
+    (1_000_000_000, "eine Milliarde", "Milliarden"),
+    (1_000_000, "eine Millionen", "Millionen"),
+]
+_PHONE_NUMBER_RE = re.compile(r"(?<![\d.:])\d{2,4}(?:[ -]\d{2,6}){1,}(?![\d.:])")
 
 
 def _int_to_de(n, standalone=True):
@@ -79,17 +86,14 @@ def _int_to_de(n, standalone=True):
         t, r = n // 1_000, n % 1_000
         prefix = _int_to_de(t, standalone=False) if t != 1 else "ein"
         return prefix + "tausend" + (_int_to_de(r, standalone=False) if r else "")
-    if n < 1_000_000_000:
-        m, r = n // 1_000_000, n % 1_000_000
-        word = (
-            "eine Million" if m == 1 else _int_to_de(m, standalone=False) + " Millionen"
-        )
-        return word + (" " + _int_to_de(r, standalone=False) if r else "")
-    b, r = n // 1_000_000_000, n % 1_000_000_000
-    word = (
-        "eine Milliarde" if b == 1 else _int_to_de(b, standalone=False) + " Milliarden"
-    )
-    return word + (" " + _int_to_de(r, standalone=False) if r else "")
+
+    for divisor, singular, plural in _LARGE_SCALES:
+        if n >= divisor:
+            scale_count, r = divmod(n, divisor)
+            word = singular if scale_count == 1 else _int_to_de(scale_count, standalone=False) + " " + plural
+            return word + (" " + _int_to_de(r, standalone=False) if r else "")
+
+    return _int_to_de(n)
 
 
 # ── ordinals ─────────────────────────────────────────────────────────────────
@@ -101,7 +105,14 @@ def _ordinal_stem_de(n):
     """Ordinal stem without inflection suffix."""
     if n in _ORD_IRREG:
         return _ORD_IRREG[n]
-    return _int_to_de(n, standalone=False) + ("t" if n < 20 else "st")
+    stem = _int_to_de(n, standalone=False) + ("t" if n < 20 else "st")
+    if n == 100 or n == 1000:
+        stem = stem.replace("ein", "", 1)
+    return stem
+
+
+def _ordinal_with_suffix_de(n, suffix):
+    return _ordinal_stem_de(n) + suffix
 
 
 # ── years ────────────────────────────────────────────────────────────────────
@@ -152,8 +163,23 @@ def _currency_repl(sym, num):
     cents_total = int((val * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     euros, cents = divmod(cents_total, 100)
     if cents == 0:
-        return _int_to_de(euros) + " " + word
-    return _int_to_de(euros) + " " + word + " und " + _int_to_de(cents) + " Cent"
+        return _int_to_de(euros, standalone=False) + " " + word
+    return _int_to_de(euros, standalone=False) + " " + word + " und " + _int_to_de(cents, standalone=False) + " Cent"
+
+
+def _render_full_date(day, month, year, suffix):
+    if day < 1 or day > 31 or month < 1 or month > 12:
+        return None
+    return _ordinal_with_suffix_de(day, suffix) + " " + _MONTHS[month] + " " + _year_de(year)
+
+
+def _digits_to_de(digits):
+    return " ".join(_int_to_de(int(d)) for d in digits)
+
+
+def _phone_repl(match):
+    groups = re.findall(r"\d+", match.group(0))
+    return " ".join(_digits_to_de(group) for group in groups)
 
 
 # ── text normalization ───────────────────────────────────────────────────────
@@ -183,6 +209,8 @@ def normalize_text_de(text):
     text = re.sub(r"\bNr\.(?=\s*\d)", "Nummer", text)
     text = re.sub(r"\bTel\.(?=\s)", "Telefon", text)
     text = re.sub(r"\bAbt\.(?=\s)", "Abteilung", text)
+    text = re.sub(r"\bgem\.(?=\s)", "gemäß", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bAbs\.(?=\s*\d)", "Absatz", text)
     text = re.sub(r"\bGmbH\b", "Gesellschaft mit beschränkter Haftung", text)
     text = re.sub(r"\bAG\b(?=[\s,.]|$)", "Aktiengesellschaft", text)
     text = re.sub(r"\bz\.\s*B\.", "zum Beispiel", text, flags=re.IGNORECASE)
@@ -214,6 +242,8 @@ def normalize_text_de(text):
         ("Dez", "Dezember"),
     ]:
         text = re.sub(rf"\b{abbr}\.(?=\s)", full, text)
+    text = re.sub(r"§§\s*(?=\d)", "Paragrafen ", text)
+    text = re.sub(r"§\s*(?=\d)", "Paragraf ", text)
 
     # 4. Currency (symbol before or after amount)
     csym = r"[€$£¥]"
@@ -237,18 +267,34 @@ def normalize_text_de(text):
 
     text = re.sub(r"\b(\d{1,2}):(\d{2})\b(?:\s*Uhr\b)?", _time_repl, text)
 
-    # 6. Full dates (DD.MM.YYYY)
-    def _date_repl(m):
-        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if d < 1 or d > 31 or mo < 1 or mo > 12:
+    # 6. Full dates (DD.MM.YYYY) with simple case-aware ordinal inflection.
+    def _date_with_prefix_repl(m):
+        prefix = m.group(1)
+        day, month, year = int(m.group(2)), int(m.group(3)), int(m.group(4))
+        suffix = 'en' if prefix.casefold() in {'am', 'im', 'vom', 'zum', 'den'} else 'e'
+        rendered = _render_full_date(day, month, year, suffix)
+        if rendered is None:
             return m.group(0)
-        return _ordinal_stem_de(d) + "e " + _MONTHS[mo] + " " + _year_de(y)
+        return prefix + ' ' + rendered
 
+    def _date_repl(m):
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        rendered = _render_full_date(day, month, year, 'er')
+        if rendered is None:
+            return m.group(0)
+        return rendered
+
+    text = re.sub(r"\b(vom|am|im|zum|den|der)\s+(\d{1,2})\.(\d{1,2})\.(\d{4})\b", _date_with_prefix_repl, text, flags=re.IGNORECASE)
     text = re.sub(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", _date_repl, text)
 
-    # 7. Ordinals mid-sentence (e.g. "am 3. Mai") -- only 1-2 digit numbers
+    # 7. Ordinals in common article contexts and general mid-sentence ordinals.
     text = re.sub(
-        r"(?<!\d)(\d{1,2})\.\s",
+        r"\b([Aa]m)\s+(\d+)\.\s",
+        lambda m: m.group(1) + " " + _ordinal_stem_de(int(m.group(2))) + "en ",
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(\d+)\.\s",
         lambda m: _ordinal_stem_de(int(m.group(1))) + "e ",
         text,
     )
@@ -284,6 +330,10 @@ def normalize_text_de(text):
         )
 
     text = re.sub(r"\b(\d+),(\d+)\b", _decimal_repl, text)
+
+    # Phone-like digit groups should be read digit-by-digit instead of as one integer.
+    text = _PHONE_NUMBER_RE.sub(_phone_repl, text)
+    text = re.sub(r"\s*%", " Prozent", text)
 
     # Plain integers. Keep any invalid HH:MM text that survived the time pass unchanged.
     remaining_time_re = re.compile(r"\b\d{1,2}:\d{2}\b(?:\s*Uhr\b)?")
@@ -377,15 +427,31 @@ def _load_overrides():
 
 
 _OVERRIDES, _OVERRIDE_ALIASES = _load_overrides()
+_MAX_OVERRIDE_TOKENS = 4
 
 
-def override_for(word: str) -> Optional[str]:
-    """Return override phonemes for a single word, or None if not overridden."""
-    key = normalize_for_lookup(word)
+def _resolve_override(text: str) -> Optional[str]:
+    key = normalize_for_lookup(text)
     if not key:
         return None
     key = _OVERRIDE_ALIASES.get(key, key)
     return _OVERRIDES.get(key)
+
+
+def override_for(word: str) -> Optional[str]:
+    """Return override phonemes for a single word, or None if not overridden."""
+    return _resolve_override(word)
+
+
+def _find_phrase_override(text: str, matches, start_index: int):
+    max_end = min(len(matches), start_index + _MAX_OVERRIDE_TOKENS)
+    for end_index in range(max_end, start_index, -1):
+        start = matches[start_index].start()
+        end = matches[end_index - 1].end()
+        phonemes = _resolve_override(text[start:end])
+        if phonemes is not None:
+            return end_index - 1, phonemes
+    return None, None
 
 
 # ── G2P class ────────────────────────────────────────────────────────────────
@@ -430,15 +496,20 @@ class DEG2P:
         # When no overrides match, this is identical to espeak(text).
         parts = []
         cursor = 0
-        for match in _OVERRIDE_WORD_RE.finditer(text):
-            phonemes = override_for(match.group(0))
+        matches = list(_OVERRIDE_WORD_RE.finditer(text))
+        i = 0
+        while i < len(matches):
+            match = matches[i]
+            end_index, phonemes = _find_phrase_override(text, matches, i)
             if phonemes is None:
+                i += 1
                 continue
             preceding = text[cursor:match.start()]
             if preceding.strip():
                 parts.append(self._espeak_phonemes(preceding))
             parts.append(phonemes)
-            cursor = match.end()
+            cursor = matches[end_index].end()
+            i = end_index + 1
 
         if cursor == 0:
             return self.espeak(text)
