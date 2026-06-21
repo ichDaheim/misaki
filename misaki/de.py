@@ -261,6 +261,8 @@ def normalize_text_de(text):
     # 5. Times (HH:MM)
     def _time_repl(m):
         h, mi = int(m.group(1)), int(m.group(2))
+        if h > 23 or mi > 59:
+            return m.group(0)
         return _int_to_de(h) + " Uhr" + (" " + _int_to_de(mi) if mi else "")
 
     text = re.sub(r"\b(\d{1,2}):(\d{2})\b(?:\s*Uhr\b)?", _time_repl, text)
