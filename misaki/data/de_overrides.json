@@ -30,6 +30,9 @@
         "typescript": "tˈaɪpskʁɪpt",
         "unsloth": "ˈʌnslɔːθ",
         "vits": "vˈɪts",
+        "scrum" : "skɹʌm",
+        "donald": "ˈdɒn.əld",
+        "trump": "tɹʌmp",
         "vscode": "viːˈɛs koːt"
     },
     "en": {
@@ -94,7 +97,11 @@
         "prosthese": "pʁɔstˈeːzə",
         "prothese": "pʁotˈeːzə",
         "symbiose": "zymbɪˈoːzə",
-        "synthese": "zyntˈeːzə"
+        "synthese": "zyntˈeːzə",
+        "käsefondue": "ˈkɛːzəfɔ̃ˌdyː",
+        "käsefondues": "ˈkɛːzəfɔ̃ˌdyːs",
+        "individuum": "ɪndiˈviːduʊm",
+        "chopin": "ʃɔ.pɛ̃"
     },
     "aliases": {
         "moetandchandon": "moetchandon"
